@@ -16,7 +16,7 @@ import javax.lang.model.element.Name;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.MirroredTypeException;
-import javax.lang.model.type.NoType;
+import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic.Kind;
@@ -53,7 +53,7 @@ public class ImplementProcessor extends AbstractProcessor
 			
 			//2. Is class implements interface (value of annotation)
 			TypeElement enclosingType = (TypeElement)annotatedElement.getEnclosingElement();
-			if (!isImplements(enclosingType, interfaceMirror))
+			if (!typeUtils.isSubtype(enclosingType.asType(), interfaceMirror))
 			{
 				printError(enclosingType.getSimpleName() + " must implemet " + interfaceType.getSimpleName(), annotatedElement);
 				continue;
@@ -70,23 +70,6 @@ public class ImplementProcessor extends AbstractProcessor
 		return false;
 	}
 	
-	private boolean isImplements(TypeElement classType, TypeMirror interfaceType)
-	{
-		boolean isThisClassImplements = classType.getInterfaces().contains(interfaceType);
-		if (isThisClassImplements) {
-			return true;
-		}
-		
-		TypeMirror baseMirror = classType.getSuperclass();
-		if (baseMirror instanceof NoType) {
-			return false;
-		}
-		
-		// Recursive search
-		TypeElement base = asTypeElement(baseMirror);
-		return (isImplements(base, interfaceType));
-	}
-	
 	private boolean isInterfaceHaveMethod(TypeElement interfaceType, ExecutableElement method)
 	{
 		Name methodName = method.getSimpleName();
@@ -101,8 +84,9 @@ public class ImplementProcessor extends AbstractProcessor
 					continue;
 				}
 				
-				// Is return types match?
-				if (!method.getReturnType().equals(interfaceMethod.getReturnType())) {
+				// Is return types match (ignore type variable)?
+				TypeMirror returnType = method.getReturnType();
+				if (isTypeVariable(returnType) && !returnType.equals(interfaceMethod.getReturnType())) {
 					continue;
 				}
 				
@@ -134,7 +118,12 @@ public class ImplementProcessor extends AbstractProcessor
 		
 		for (int i = 0; i < methodParameters.size(); i++)
 		{
-			if (!methodParameters.get(i).asType().equals(interfaceMethodParameters.get(i).asType())) {
+			TypeMirror interfaceParameterMirror = interfaceMethodParameters.get(i).asType();
+			if (isTypeVariable(interfaceParameterMirror)) {
+				continue;
+			}
+			
+			if (!methodParameters.get(i).asType().equals(interfaceParameterMirror)) {
 				return false;
 			}
 		}
@@ -150,6 +139,10 @@ public class ImplementProcessor extends AbstractProcessor
 			return e.getTypeMirror();
 		}
 		return null;
+	}
+	
+	private boolean isTypeVariable(TypeMirror type) {
+		return type.getKind() == TypeKind.TYPEVAR;
 	}
 	
 	private TypeElement asTypeElement(TypeMirror typeMirror) {

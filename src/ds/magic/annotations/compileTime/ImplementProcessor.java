@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 import javax.annotation.processing.AbstractProcessor;
+import javax.annotation.processing.Messager;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.annotation.processing.SupportedAnnotationTypes;
@@ -21,7 +22,7 @@ import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Types;
 import javax.tools.Diagnostic.Kind;
 
-@SupportedAnnotationTypes(value = {"ds.magic.annotations.compileTime.Implement"})
+@SupportedAnnotationTypes({"ds.magic.annotations.compileTime.Implement"})
 @SupportedSourceVersion(SourceVersion.RELEASE_8)
 public class ImplementProcessor extends AbstractProcessor
 {
@@ -35,34 +36,38 @@ public class ImplementProcessor extends AbstractProcessor
 	}
 	
 	@Override
-	public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv)
+	public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env)
 	{
-		Set<? extends Element> annotatedElements = roundEnv.getElementsAnnotatedWith(Implement.class);
-		for(Element annotatedElement : annotatedElements)
+		Set<? extends Element> annotatedElements = env.getElementsAnnotatedWith(Implement.class);
+		for(Element annotated : annotatedElements)
 		{
-			Implement annotation = annotatedElement.getAnnotation(Implement.class);
+			Implement annotation = annotated.getAnnotation(Implement.class);
 			TypeMirror interfaceMirror = getValueMirror(annotation);
 			TypeElement interfaceType = asTypeElement(interfaceMirror);
 			
 			// 1. Is annotation value an interface?
 			if (interfaceType.getKind() != ElementKind.INTERFACE)
 			{
-				printError("Value of @" + Implement.class.getSimpleName() + " must be an interface", annotatedElement);
+				String name = Implement.class.getSimpleName();
+				printError("Value of @" + name + " must be an interface", annotated);
 				continue;
 			}
 			
 			//2. Is class implements interface (value of annotation)
-			TypeElement enclosingType = (TypeElement)annotatedElement.getEnclosingElement();
+			TypeElement enclosingType = (TypeElement)annotated.getEnclosingElement();
 			if (!typeUtils.isSubtype(enclosingType.asType(), interfaceMirror))
 			{
-				printError(enclosingType.getSimpleName() + " must implemet " + interfaceType.getSimpleName(), annotatedElement);
+				Name className = enclosingType.getSimpleName();
+				Name interfaceName = interfaceType.getSimpleName();
+				printError(className + " must implemet " + interfaceName, annotated);
 				continue;
 			}
 			
 			//3. Is interface have same method as annotated
-			if (!isInterfaceHaveMethod(interfaceType, (ExecutableElement)annotatedElement))
+			if (!haveMethod(interfaceType, (ExecutableElement)annotated))
 			{
-				printError(interfaceType.getSimpleName() + " don't have \"" + annotatedElement + "\" method", annotatedElement);
+				Name name = interfaceType.getSimpleName();
+				printError(name + " don't have \"" + annotated + "\" method", annotated);
 				continue;
 			}
 		}
@@ -70,7 +75,7 @@ public class ImplementProcessor extends AbstractProcessor
 		return false;
 	}
 	
-	private boolean isInterfaceHaveMethod(TypeElement interfaceType, ExecutableElement method)
+	private boolean haveMethod(TypeElement interfaceType, ExecutableElement method)
 	{
 		Name methodName = method.getSimpleName();
 		for (Element interfaceElement : interfaceType.getEnclosedElements())
@@ -86,7 +91,8 @@ public class ImplementProcessor extends AbstractProcessor
 				
 				// Is return types match (ignore type variable)?
 				TypeMirror returnType = method.getReturnType();
-				if (isTypeVariable(returnType) && !returnType.equals(interfaceMethod.getReturnType())) {
+				TypeMirror interfaceReturnType = interfaceMethod.getReturnType();
+				if (!isTypeVariable(interfaceReturnType) && !returnType.equals(interfaceReturnType)) {
 					continue;
 				}
 				
@@ -102,7 +108,7 @@ public class ImplementProcessor extends AbstractProcessor
 		for (TypeMirror baseMirror : interfaceType.getInterfaces())
 		{
 			TypeElement base = asTypeElement(baseMirror);
-			if (isInterfaceHaveMethod(base, method)) {
+			if (haveMethod(base, method)) {
 				return true;
 			}
 		}
@@ -110,15 +116,16 @@ public class ImplementProcessor extends AbstractProcessor
 		return false;
 	}
 	
-	private boolean isParametersEquals(List<? extends VariableElement> methodParameters, List<? extends VariableElement> interfaceMethodParameters)
+	private boolean isParametersEquals(List<? extends VariableElement> methodParameters,
+			List<? extends VariableElement> interfaceParameters)
 	{
-		if (methodParameters.size() != interfaceMethodParameters.size()) {
+		if (methodParameters.size() != interfaceParameters.size()) {
 			return false;
 		}
 		
 		for (int i = 0; i < methodParameters.size(); i++)
 		{
-			TypeMirror interfaceParameterMirror = interfaceMethodParameters.get(i).asType();
+			TypeMirror interfaceParameterMirror = interfaceParameters.get(i).asType();
 			if (isTypeVariable(interfaceParameterMirror)) {
 				continue;
 			}
@@ -149,7 +156,9 @@ public class ImplementProcessor extends AbstractProcessor
 		return (TypeElement)typeUtils.asElement(typeMirror);
 	}
 	
-	private void printError(String message, Element annotatedElement) {
-		processingEnv.getMessager().printMessage(Kind.ERROR, message, annotatedElement);
+	private void printError(String message, Element annotatedElement)
+	{
+		Messager messager = processingEnv.getMessager();
+		messager.printMessage(Kind.ERROR, message, annotatedElement);
 	}
 }
